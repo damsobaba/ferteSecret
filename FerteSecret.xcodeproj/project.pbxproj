@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CE941F332E46068700FCA40D /* ConfettiSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = CE941F322E46068700FCA40D /* ConfettiSwiftUI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CED6FF222E45F78200C37E8B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CE941F332E46068700FCA40D /* ConfettiSwiftUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = FerteSecret;
 			packageProductDependencies = (
+				CE941F322E46068700FCA40D /* ConfettiSwiftUI */,
 			);
 			productName = FerteSecret;
 			productReference = CED6FF102E45F78000C37E8B /* FerteSecret.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = CED6FF072E45F78000C37E8B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CED6FF112E45F78000C37E8B /* Products */;
 			projectDirPath = "";
@@ -591,6 +600,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/simibac/ConfettiSwiftUI.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CE941F322E46068700FCA40D /* ConfettiSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */;
+			productName = ConfettiSwiftUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CED6FF082E45F78000C37E8B /* Project object */;
 }
