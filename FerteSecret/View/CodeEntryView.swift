@@ -34,7 +34,7 @@ struct CodeEntryView: View {
 
                 ScrollView {
                     VStack(spacing: 20) {
-                        Text("Trouve le secret")
+                        Text("Trouve le secret:  lk,dlzk,d")
                             .font(.system(size:28, weight:.bold, design:.rounded))
                             .foregroundColor(.white)
                         Text("Points: \(vm.currentPlayer?.points ?? 0)")
