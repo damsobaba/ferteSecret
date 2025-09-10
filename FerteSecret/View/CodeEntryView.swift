@@ -70,12 +70,23 @@ struct CodeEntryView: View {
         .alert("Bravo !", isPresented: $showSuccess) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Vous avez trouvé le secret et gagné 3 points ! 🎉")
+            Text("Vous avez trouvé le secret et gagné 5 points ! 🎉")
         }
         .onAppear {
-            // init selection safely
             selectedPlayerID = vm.players.first(where: { $0.id != vm.currentPlayer?.id })?.id
             selectedSecret = vm.availableSecrets.first ?? ""
+        }
+        .onReceive(vm.$players) { _ in
+            refreshSelectionIfNeeded()
+        }
+        .onReceive(vm.$availableSecrets) { secrets in
+            if selectedSecret.isEmpty || !secrets.contains(selectedSecret) {
+                selectedSecret = secrets.first ?? ""
+            }
+        }
+        .onChange(of: vm.currentPlayer?.points) { _ in
+            // efface messages si on veut rafraîchir l'UI après mise à jour points
+            vm.message = ""
         }
     }
 
@@ -127,6 +138,8 @@ struct CodeEntryView: View {
                 HStack {
                     Text(selectedSecret.isEmpty ? "Sélectionner un secret" : selectedSecret)
                         .foregroundColor(selectedSecret.isEmpty ? Color.white.opacity(0.7) : .white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                     Spacer()
                     if !selectedSecret.isEmpty {
                         Text("choisi")
@@ -163,7 +176,9 @@ struct CodeEntryView: View {
                     .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
             }
-            .disabled(selectedPlayerID == nil || selectedSecret.isEmpty)
+            // disabled also when the current player has 0 points
+            .disabled(selectedPlayerID == nil || selectedSecret.isEmpty || (vm.currentPlayer?.points ?? 0) <= 0)
+            .opacity((selectedPlayerID == nil || selectedSecret.isEmpty || (vm.currentPlayer?.points ?? 0) <= 0) ? 0.55 : 1.0)
             .modifier(ShakeEffect(shakes: CGFloat(shakeButton)))
             .padding(.horizontal)
 
@@ -190,19 +205,9 @@ struct CodeEntryView: View {
                         secretSearch = ""
                         showSecretSheet = false
                     } label: {
-                        HStack {
-                            Text(secret)
-                            Spacer()
-                            if vm.players.contains(where: { $0.secret == secret }) {
-                                Text("attribué")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .padding(6)
-                                    .background(Color.white.opacity(0.08))
-                                    .cornerRadius(8)
-                            }
-                        }
-                        .contentShape(Rectangle())
+                        Text(secret)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .contentShape(Rectangle())
                     }
                 }
             }
@@ -225,48 +230,59 @@ struct CodeEntryView: View {
         return vm.availableSecrets.filter { $0.localizedCaseInsensitiveContains(secretSearch) }
     }
 
+    private func refreshSelectionIfNeeded() {
+        // si la sélection n'existe plus (ou est nil), on en choisit une par défaut
+        if selectedPlayerID == nil || !vm.players.contains(where: { $0.id == selectedPlayerID }) {
+            selectedPlayerID = vm.players.first(where: { $0.id != vm.currentPlayer?.id })?.id
+        }
+    }
+
     private func validateGuess() {
         guard let id = selectedPlayerID,
               let target = vm.players.first(where: { $0.id == id }),
               let me = vm.currentPlayer else { return }
 
-        guard let targetSecret = target.secret else {
+        guard let targetSecret = target.secret, !targetSecret.isEmpty else {
             vm.message = "Ce joueur n'a pas encore choisi son secret."
             return
         }
 
+        // comparaison simple — tu peux normaliser si besoin
         if selectedSecret == targetSecret {
+            // victoire : +5 points (persist via ViewModel helper)
             vm.message = ""
-            var p = me; p.points += 3; vm.updatePlayer(p)
+            // show confetti & sound immediately
             AudioServicesPlaySystemSound(1025)
             confettiTrigger.toggle()
             showSuccess = true
-            // success
-            vm.changePointsForCurrentPlayer(by: 3) { ok, err in
+
+            vm.changePointsForCurrentPlayer(by: 5) { ok, err in
                 if ok {
-                    // confetti / son / alert
+                    // success handled by vm (listener or local update)
                 } else {
                     print("Erreur incrément points:", err ?? "")
+                    vm.message = "Erreur en sauvegarde des points."
                 }
             }
-
-
         } else {
-            var p = me; p.points = max(0, p.points - 1); vm.updatePlayer(p)
-            vm.message = "Mauvais secret !"
+            // échec : -5 points (ne descend pas sous 0 dans VM)
+            vm.message = "Mauvais secret ! -5 points"
             withAnimation(.interpolatingSpring(stiffness: 200, damping: 5)
                           .repeatCount(3, autoreverses: false)) {
                 shakeButton += 1
             }
-            // failure (perdre 1 point)
-            vm.changePointsForCurrentPlayer(by: -1) { ok, err in
-                if !ok { print("Erreur décrément:", err ?? "") }
-                // lance shake etc
+
+            vm.changePointsForCurrentPlayer(by: -5) { ok, err in
+                if !ok {
+                    print("Erreur décrément:", err ?? "")
+                    vm.message = "Erreur en sauvegarde des points."
+                }
             }
+
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
 
-        // optional: keep selection or reset
+        // optionnel : reset selection sur premier secret
         selectedSecret = vm.availableSecrets.first ?? ""
     }
 

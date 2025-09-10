@@ -50,10 +50,20 @@ final class FirebaseService {
     func listenPlayers(onUpdate: @escaping (Result<[(id: String, data: [String:Any])], Error>) -> Void) {
         playersListener?.remove()
         playersListener = db.collection("players")
-            .order(by: "createdAt", descending: false)
+            //.order(by: "createdAt", descending: false) // désactiver temporairement l'ordre si ça pose problème
             .addSnapshotListener { snap, err in
-                if let err = err { onUpdate(.failure(err)); return }
-                let arr = snap?.documents.map { ($0.documentID, $0.data()) } ?? []
+                if let err = err {
+                    print("[FirebaseService] listenPlayers error:", err.localizedDescription)
+                    onUpdate(.failure(err))
+                    return
+                }
+                guard let docs = snap?.documents else {
+                    print("[FirebaseService] listenPlayers: no documents")
+                    onUpdate(.success([]))
+                    return
+                }
+                let arr = docs.map { ($0.documentID, $0.data()) }
+                print("[FirebaseService] listenPlayers: got \(arr.count) players (docs)")
                 onUpdate(.success(arr))
             }
     }
@@ -143,6 +153,13 @@ final class FirebaseService {
                 print("changePlayerPoints success for", uid, "delta:", delta)
             }
             completion?(err)
+        }
+    }
+    func fetchPlayersOnce(completion: @escaping (Result<[(id:String, data:[String:Any])], Error>) -> Void) {
+        db.collection("players").getDocuments { snap, err in
+            if let err = err { completion(.failure(err)); return }
+            let arr = snap?.documents.map { ($0.documentID, $0.data()) } ?? []
+            completion(.success(arr))
         }
     }
 }

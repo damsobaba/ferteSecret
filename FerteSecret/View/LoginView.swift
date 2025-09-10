@@ -60,28 +60,6 @@ struct LoginView: View {
 
                     Divider().background(Color.white.opacity(0.2)).padding(.vertical, 14)
 
-                    VStack(spacing: 10) {
-                        Text("Création rapide (local)").foregroundColor(.white)
-                        TextField("Pseudo local", text: $quickName).textFieldStyle(RoundedBorderTextFieldStyle()).padding(.horizontal)
-
-                        Menu {
-                            ForEach(vm.availableSecrets.isEmpty ? ["Dragon","Chef","Agent"] : vm.availableSecrets, id:\.self) { s in
-                                Button(s) { quickSecret = s }
-                            }
-                        } label: {
-                            HStack {
-                                Text(quickSecret.isEmpty ? "Choisir un secret (optionnel)" : quickSecret)
-                                    .foregroundColor(quickSecret.isEmpty ? Color.white.opacity(0.7) : .white)
-                                Spacer()
-                                Image(systemName: "chevron.down").foregroundColor(.white.opacity(0.8))
-                            }.padding().background(Color.white.opacity(0.06)).cornerRadius(10).padding(.horizontal)
-                        }
-
-                        Button(action: submitQuick) {
-                            Text("Créer pseudo local").frame(maxWidth: .infinity).padding().background(Color.white.opacity(0.12)).foregroundColor(.white).cornerRadius(12).padding(.horizontal)
-                        }
-                        .disabled(quickName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
 
                     Spacer(minLength: 40)
                 }

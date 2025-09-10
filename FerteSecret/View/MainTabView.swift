@@ -16,7 +16,7 @@ struct MainTabView: View {
         TabView {
             CodeEntryView(vm: vm)
                 .tabItem { Label("Accueil", systemImage: "house") }
-            RulesView()
+            RulesView(vm: vm)
                 .tabItem { Label("Règles", systemImage: "book") }
             ProfileView(vm: vm)
                 .tabItem { Label("Profil", systemImage: "person.circle") }
