@@ -7,14 +7,6 @@
 
 //  Player.swift
 import Foundation
-
-struct Player: Identifiable, Codable {
-    let id: UUID
-    let username: String
-    var secret: String?
-    var points: Int
-}
-
 //  Extensions.swift
 import SwiftUI
 

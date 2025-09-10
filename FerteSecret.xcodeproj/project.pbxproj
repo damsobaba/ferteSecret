@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CE35F0B02E7092150044585E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = CE35F0AF2E7092150044585E /* FirebaseAuth */; };
+		CE35F0B22E7092150044585E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = CE35F0B12E7092150044585E /* FirebaseFirestore */; };
 		CE941F332E46068700FCA40D /* ConfettiSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = CE941F322E46068700FCA40D /* ConfettiSwiftUI */; };
 /* End PBXBuildFile section */
 
@@ -57,6 +59,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				CE941F332E46068700FCA40D /* ConfettiSwiftUI in Frameworks */,
+				CE35F0B02E7092150044585E /* FirebaseAuth in Frameworks */,
+				CE35F0B22E7092150044585E /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +122,8 @@
 			name = FerteSecret;
 			packageProductDependencies = (
 				CE941F322E46068700FCA40D /* ConfettiSwiftUI */,
+				CE35F0AF2E7092150044585E /* FirebaseAuth */,
+				CE35F0B12E7092150044585E /* FirebaseFirestore */,
 			);
 			productName = FerteSecret;
 			productReference = CED6FF102E45F78000C37E8B /* FerteSecret.app */;
@@ -203,6 +209,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */,
+				CE35F0AB2E708CE40044585E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CED6FF112E45F78000C37E8B /* Products */;
@@ -602,6 +609,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		CE35F0AB2E708CE40044585E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.2.0;
+			};
+		};
 		CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/simibac/ConfettiSwiftUI.git";
@@ -613,6 +628,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		CE35F0AF2E7092150044585E /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE35F0AB2E708CE40044585E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		CE35F0B12E7092150044585E /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE35F0AB2E708CE40044585E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
 		CE941F322E46068700FCA40D /* ConfettiSwiftUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CE941F312E46066900FCA40D /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */;
