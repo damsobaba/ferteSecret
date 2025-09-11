@@ -86,12 +86,12 @@ struct LoginView: View {
         }
     }
 
-    private func submitQuick() {
-        let name = quickName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        vm.createLocalPlayer(username: name, secret: quickSecret.isEmpty ? nil : quickSecret)
-        quickName = ""; quickSecret = ""
-    }
+//    private func submitQuick() {
+//        let name = quickName.trimmingCharacters(in: .whitespacesAndNewlines)
+//        guard !name.isEmpty else { return }
+//        vm.createLocalPlayer(username: name, secret: quickSecret.isEmpty ? nil : quickSecret)
+//        quickName = ""; quickSecret = ""
+//    }
 
     private func hideKeyboard() {
         #if canImport(UIKit)

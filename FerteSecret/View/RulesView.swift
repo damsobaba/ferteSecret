@@ -24,10 +24,20 @@ struct RulesView: View {
                     Group {
                         Text("⚙️ Comment jouer").font(.headline)
                         Text("""
-1. Chaque joueur choisit un secret.
-2. Vous disposez de 5 points au départ.
-3. À chaque mauvaise tentative, vous perdez 1 point et le bouton shake.
-4. À chaque bonne réponse, vous gagnez 3 points, confettis et son !
+Les règles du jeu sont les suivantes dans Secret Ferté chacun des habitants échangent son secret à la voix contre 10 points 
+
+🎯Tous les habitants doivent tenter de dissimuler leur secret pendant l'aventure tout en enquêtant pour découvrir les secrets des autres habitants.
+
+📳Lorsqu'un habitant pense avoir découvert un secret : ils BUZZENT!
+S'ils pensent avoir découvert le bon secret, il remporte la totalité des points du candidat dont a été découvert le secret. S'il se trompe, la voix lui retire 5 points de sa cagnotte.
+LE BUZZ coûte 5 points ! Il ne faut donc pas trop buzzer !!!
+
+✨La Voix a cependant tout prévu !
+À tout moment les candidats peuvent renflouer leur cagnotte de points grâce à des missions secrètes ou à des jeux ponctuelles
+
+⚠️Attention dans Secret Ferté, il est interdit de parler ou de faire allusion à son secret sous peine de sanction !
+
+Que la chasse aux secrets commencent c'est tout pour le moment
 """)
                     }
                     .foregroundColor(.white)

@@ -1,7 +1,4 @@
-//
-//  GameViewModel.swift
-//
-
+// GameViewModel.swift
 import Foundation
 import Combine
 import FirebaseAuth
@@ -12,10 +9,12 @@ struct Player: Identifiable, Codable, Equatable {
     let username: String
     var secret: String?
     var points: Int
+    var secretRevealed: Bool
 }
 
 // ViewModel
 final class GameViewModel: ObservableObject {
+    // Published
     @Published var players: [Player] = []
     @Published var currentPlayer: Player?
     @Published var isLoggedIn: Bool = false
@@ -24,6 +23,8 @@ final class GameViewModel: ObservableObject {
     @Published var codeInput: String = ""
 
     private var cancellables = Set<AnyCancellable>()
+
+    // default list (kept local)
     static let defaultSecrets: [String] = [
         "Déchiré mon pantalon en public.",
         "Couché sur une plage.",
@@ -166,19 +167,17 @@ final class GameViewModel: ObservableObject {
         "Couché sur un balcon."
     ]
 
+    // MARK: - Init
     init() {
-      
-        // lors de l'init ou fetch
-        FirebaseService.shared.fetchSecrets { [weak self] result in
+        // load secrets (merge defaults + remote extras)
+        FirebaseService.shared.fetchSecrets { [weak self] res in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                switch result {
+                switch res {
                 case .success(let remote):
-                    // garde les defaults en tête, puis ajoute uniquement les extras distants
                     let extras = remote.filter { !GameViewModel.defaultSecrets.contains($0) }
                     self.availableSecrets = GameViewModel.defaultSecrets + extras
                 case .failure(_):
-                    // fallback : la liste locale par défaut
                     self.availableSecrets = GameViewModel.defaultSecrets
                 }
             }
@@ -187,7 +186,7 @@ final class GameViewModel: ObservableObject {
         // start players listener
         startPlayersListener()
 
-        // optional: ensure anon auth if Firestore rules need it for reads
+        // ensure anonymous auth for read/write if rules need it
         if Auth.auth().currentUser == nil {
             FirebaseService.shared.signInAnonymously { result in
                 switch result {
@@ -198,6 +197,8 @@ final class GameViewModel: ObservableObject {
                 }
             }
         }
+
+        // helpful debug fetch
         FirebaseService.shared.fetchPlayersOnce { result in
             DispatchQueue.main.async {
                 switch result {
@@ -210,6 +211,7 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Players listener mapping
     private func startPlayersListener() {
         FirebaseService.shared.listenPlayers { [weak self] res in
             DispatchQueue.main.async {
@@ -219,7 +221,8 @@ final class GameViewModel: ObservableObject {
                         let username = data["username"] as? String ?? "—"
                         let secret = data["secret"] as? String
                         let points = data["points"] as? Int ?? 5
-                        return Player(id: id, username: username, secret: secret, points: points)
+                        let revealed = data["secretRevealed"] as? Bool ?? false
+                        return Player(id: id, username: username, secret: secret, points: points, secretRevealed: revealed)
                     }
                 case .failure(let err):
                     print("players listener error:", err.localizedDescription)
@@ -232,7 +235,7 @@ final class GameViewModel: ObservableObject {
         FirebaseService.shared.stopListeningPlayers()
     }
 
-    // MARK: - Auth
+    // MARK: - Auth / register / login
 
     func register(email: String, password: String, username: String, completion: @escaping (Result<Void, Error>) -> Void) {
         FirebaseService.shared.createUser(email: email, password: password) { [weak self] res in
@@ -240,12 +243,11 @@ final class GameViewModel: ObservableObject {
                 switch res {
                 case .success(let user):
                     let uid = user.uid
-                    // create player doc
-                    FirebaseService.shared.upsertPlayer(uid: uid, username: username, secret: nil, points: 5)
-                    let newP = Player(id: uid, username: username, secret: nil, points: 5)
+                    // create player doc with secretRevealed = false
+                    FirebaseService.shared.upsertPlayer(uid: uid, username: username, secret: nil, points: 5, secretRevealed: false)
+                    let newP = Player(id: uid, username: username, secret: nil, points: 5, secretRevealed: false)
                     self?.currentPlayer = newP
                     self?.isLoggedIn = true
-                    // local append to show immediate UI (listener will sync)
                     if !(self?.players.contains(where: { $0.id == uid }) ?? false) {
                         self?.players.append(newP)
                     }
@@ -257,23 +259,57 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    func login(email: String, password: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    /// login : sign in -> try fetch player doc -> map or create
+    func login(email: String,
+               password: String,
+               completion: @escaping (Result<Void, Error>) -> Void) {
         FirebaseService.shared.signIn(email: email, password: password) { [weak self] res in
             DispatchQueue.main.async {
+                guard let self = self else {
+                    completion(.failure(NSError(domain: "", code: -1,
+                                                userInfo: [NSLocalizedDescriptionKey: "Self gone"])))
+                    return
+                }
+
                 switch res {
                 case .success(let user):
                     let uid = user.uid
-                    // try set current from local players (listener will update soon)
-                    if let existing = self?.players.first(where: { $0.id == uid }) {
-                        self?.currentPlayer = existing
+
+                    // try set current from local players (listener will sync soon)
+                    if let existing = self.players.first(where: { $0.id == uid }) {
+                        // existing should already contain secretRevealed if listener populated it
+                        self.currentPlayer = existing
                     } else {
-                        let username = user.displayName ?? user.email?.split(separator: "@").first.map(String.init) ?? "Joueur_\(uid.prefix(6))"
-                        self?.currentPlayer = Player(id: uid, username: username, secret: nil, points: 5)
+                        // create a sensible username and a Player with secretRevealed = false
+                        let username = user.displayName
+                            ?? user.email?.split(separator: "@").first.map(String.init)
+                            ?? "Joueur_\(uid.prefix(6))"
+
+                        let newP = Player(id: uid,
+                                          username: username,
+                                          secret: nil,
+                                          points: 5,
+                                          secretRevealed: false)
+                        self.currentPlayer = newP
+                        // append locally so UI shows something immediately
+                        self.players.append(newP)
                     }
-                    self?.isLoggedIn = true
-                    // ensure doc exists
-                    FirebaseService.shared.upsertPlayer(uid: uid, username: self?.currentPlayer?.username ?? "Player", secret: self?.currentPlayer?.secret, points: self?.currentPlayer?.points)
-                    completion(.success(()))
+
+                    self.isLoggedIn = true
+
+                    // ensure doc exists and includes secretRevealed
+                    FirebaseService.shared.upsertPlayer(
+                        uid: uid,
+                        username: self.currentPlayer?.username ?? "Player",
+                        secret: self.currentPlayer?.secret,
+                        points: self.currentPlayer?.points,
+                        secretRevealed: self.currentPlayer?.secretRevealed ?? false
+                    ) { err in
+                        // optionally handle upsert error (log only)
+                        if let e = err { print("login -> upsertPlayer error:", e.localizedDescription) }
+                        completion(.success(()))
+                    }
+
                 case .failure(let err):
                     completion(.failure(err))
                 }
@@ -281,16 +317,16 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    /// create a local player (no Auth). Useful for quick start
+    // MARK: - Create local player (optional)
     func createLocalPlayer(username: String, secret: String?) {
         let docId = UUID().uuidString
-        let newP = Player(id: docId, username: username, secret: secret, points: 5)
+        let newP = Player(id: docId, username: username, secret: secret, points: 5, secretRevealed: false)
         DispatchQueue.main.async {
             self.players.append(newP)
             self.currentPlayer = newP
             self.isLoggedIn = true
         }
-        FirebaseService.shared.upsertPlayer(uid: docId, username: username, secret: secret, points: 5)
+        FirebaseService.shared.upsertPlayer(uid: docId, username: username, secret: secret, points: 5, secretRevealed: false)
     }
 
     // MARK: - Secrets & points
@@ -299,27 +335,24 @@ final class GameViewModel: ObservableObject {
         DispatchQueue.main.async {
             guard var p = self.currentPlayer else { return }
             p.secret = secret
+            p.secretRevealed = false
             self.currentPlayer = p
+            if let idx = self.players.firstIndex(where: { $0.id == p.id }) { self.players[idx] = p }
 
-            FirebaseService.shared.upsertPlayer(uid: p.id, username: p.username, secret: secret, points: p.points) { err in
+            FirebaseService.shared.upsertPlayer(uid: p.id, username: p.username, secret: secret, points: p.points, secretRevealed: false) { err in
                 DispatchQueue.main.async {
                     if let err = err {
                         self.message = "Erreur sauvegarde : \(err.localizedDescription)"
-                        print("chooseSecret -> upsert error:", err.localizedDescription)
                     } else {
                         self.message = "Secret sauvegardé !"
-                        print("chooseSecret -> success for player:", p.id, p.username)
                     }
                 }
             }
         }
     }
 
-    // appelle setPlayerSecret, en s'assurant que l'utilisateur est authentifié (ou s'auth anonymement)
     func chooseSecretForCurrentUser(secret: String, completion: ((Bool,String?)->Void)? = nil) {
-        // ensure we have an uid (auth or anon)
         if Auth.auth().currentUser == nil {
-            // sign-in anonymously then write
             FirebaseService.shared.signInAnonymously { res in
                 switch res {
                 case .success(let user):
@@ -338,47 +371,55 @@ final class GameViewModel: ObservableObject {
     }
 
     private func _writeSecret(uid: String, secret: String, completion: ((Bool,String?)->Void)?) {
-        // update local model immediately
-        if var p = self.currentPlayer {
-            p.secret = secret
-            self.currentPlayer = p
-            if let idx = self.players.firstIndex(where: { $0.id == p.id }) { self.players[idx] = p }
-        } else {
-            // set currentPlayer if not set (use uid)
-            let username = Auth.auth().currentUser?.displayName ?? Auth.auth().currentUser?.email?.components(separatedBy: "@").first ?? "Joueur_\(uid.prefix(6))"
-            let newP = Player(id: uid, username: username, secret: secret, points: 5)
-            self.currentPlayer = newP
-            self.players.append(newP)
-        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completion?(false, "Self gone")
+                return
+            }
 
-        FirebaseService.shared.setPlayerSecret(uid: uid, secret: secret) { err in
-            DispatchQueue.main.async {
-                if let err = err {
-                    completion?(false, err.localizedDescription)
-                } else {
-                    completion?(true, nil)
+            if var p = self.currentPlayer {
+                p.secret = secret
+                p.secretRevealed = false
+                self.currentPlayer = p
+                if let idx = self.players.firstIndex(where: { $0.id == p.id }) {
+                    self.players[idx] = p
+                }
+            } else {
+                let username = Auth.auth().currentUser?.displayName
+                    ?? Auth.auth().currentUser?.email?.components(separatedBy: "@").first
+                    ?? "Joueur_\(uid.prefix(6))"
+                let newP = Player(id: uid, username: username, secret: secret, points: 5, secretRevealed: false)
+                self.currentPlayer = newP
+                self.players.append(newP)
+            }
+
+            FirebaseService.shared.setPlayerSecret(uid: uid, secret: secret, revealed: false) { err in
+                DispatchQueue.main.async {
+                    if let err = err {
+                        completion?(false, err.localizedDescription)
+                    } else {
+                        completion?(true, nil)
+                    }
                 }
             }
         }
     }
 
-    // Incrémente les points du joueur courant (utiliser +3 ou -1 etc)
     func changePointsForCurrentPlayer(by delta: Int64, completion: ((Bool,String?)->Void)? = nil) {
         guard let uid = Auth.auth().currentUser?.uid ?? currentPlayer?.id else {
             completion?(false, "No player id")
             return
         }
 
-        FirebaseService.shared.changePlayerPoints(uid: uid, delta: delta) { err in
+        FirebaseService.shared.changePlayerPoints(uid: uid, delta: delta) { [weak self] err in
             DispatchQueue.main.async {
                 if let err = err {
                     completion?(false, err.localizedDescription)
                 } else {
-                    // mettre à jour localement aussi (optionnel: lire depuis firestore listener)
-                    if var p = self.currentPlayer {
+                    if var p = self?.currentPlayer {
                         p.points = max(0, p.points + Int(delta))
-                        self.currentPlayer = p
-                        if let idx = self.players.firstIndex(where: { $0.id == p.id }) { self.players[idx] = p }
+                        self?.currentPlayer = p
+                        if let idx = self?.players.firstIndex(where: { $0.id == p.id }) { self?.players[idx] = p }
                     }
                     completion?(true, nil)
                 }
@@ -389,25 +430,35 @@ final class GameViewModel: ObservableObject {
     func updatePlayer(_ player: Player) {
         if let i = players.firstIndex(where: { $0.id == player.id }) { players[i] = player }
         if currentPlayer?.id == player.id { currentPlayer = player }
-        FirebaseService.shared.upsertPlayer(uid: player.id, username: player.username, secret: player.secret, points: player.points)
+        // ensure secretRevealed persisted too (best-effort)
+        FirebaseService.shared.upsertPlayer(uid: player.id, username: player.username, secret: player.secret, points: player.points, secretRevealed: player.secretRevealed)
     }
 
     // quick guess check (used by CodeEntryView)
     func attemptGuess(targetId: String, guessSecret: String) -> Bool {
-        guard let target = players.first(where: { $0.id == targetId }), var me = currentPlayer else { return false }
+        guard let target = players.first(where: { $0.id == targetId }),
+              var me = currentPlayer else { return false }
+
         guard let tSecret = target.secret else {
             message = "Ce joueur n'a pas choisi de secret."
             return false
         }
+
+        if target.secretRevealed {
+            message = "Ce secret a déjà été trouvé."
+            return false
+        }
+
         if guessSecret == tSecret {
-            me.points += 3
-            updatePlayer(me)
-            message = "Bravo ! +3 points"
+            // award
+            changePointsForCurrentPlayer(by: 5) { _, _ in }
+            // mark revealed on server
+            FirebaseService.shared.markSecretRevealed(playerId: target.id, revealedBy: me.id, removeSecret: true) { _ in }
+            message = "Bravo ! +5 points"
             return true
         } else {
-            me.points = max(0, me.points - 1)
-            updatePlayer(me)
-            message = "Mauvais secret ! -1 point"
+            changePointsForCurrentPlayer(by: -5) { _, _ in }
+            message = "Mauvais secret ! -5 points"
             return false
         }
     }
@@ -420,8 +471,8 @@ final class GameViewModel: ObservableObject {
             print("player not found for id", docId)
         }
     }
+
     /// Ajoute `amount` points au joueur identifié par `playerId` puis persiste
-    // GameViewModel.swift
     func addPoints(to playerId: String, amount: Int) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -431,22 +482,18 @@ final class GameViewModel: ObservableObject {
             p.points += amount
             if p.points < 0 { p.points = 0 }
 
-            // Update local model immediately
             self.players[idx] = p
             if self.currentPlayer?.id == p.id {
                 self.currentPlayer = p
             }
 
-            // Persist to Firestore and log success/error
-            FirebaseService.shared.upsertPlayer(uid: p.id, username: p.username, secret: p.secret, points: p.points) { err in
+            FirebaseService.shared.upsertPlayer(uid: p.id, username: p.username, secret: p.secret, points: p.points, secretRevealed: p.secretRevealed) { err in
                 DispatchQueue.main.async {
                     if let err = err {
                         print("DEBUG: Failed to persist points for \(p.username): \(err.localizedDescription)")
-                        // informe l'utilisateur dans l'UI
                         self.message = "Erreur en sauvegarde (vérifie règles Firestore)."
                     } else {
                         print("DEBUG: Successfully persisted points for \(p.username) -> \(p.points)")
-                        // optional: clear message or show success
                         self.message = "Points appliqués à \(p.username) : \(p.points)."
                     }
                 }

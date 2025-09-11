@@ -117,7 +117,7 @@ struct CodeEntryView: View {
     }
 
     private var playerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .center, spacing: 8) {
             Text("Choisir un joueur")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.9))
@@ -242,47 +242,61 @@ struct CodeEntryView: View {
               let target = vm.players.first(where: { $0.id == id }),
               let me = vm.currentPlayer else { return }
 
+        // 1) Si le secret a déjà été révélé -> message spécifique
+        if target.secretRevealed {
+            vm.message = "Ce secret a déjà été trouvé — plus de points à gagner."
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
+
+        // 2) Vérifier qu'il y a bien un secret (non-nil/non-empty)
         guard let targetSecret = target.secret, !targetSecret.isEmpty else {
             vm.message = "Ce joueur n'a pas encore choisi son secret."
             return
         }
 
-        // comparaison simple — tu peux normaliser si besoin
+        // 3) Comparaison
         if selectedSecret == targetSecret {
-            // victoire : +5 points (persist via ViewModel helper)
+            // victoire : +5 points (ou ton montant choisi)
             vm.message = ""
-            // show confetti & sound immediately
             AudioServicesPlaySystemSound(1025)
             confettiTrigger.toggle()
             showSuccess = true
 
             vm.changePointsForCurrentPlayer(by: 5) { ok, err in
-                if ok {
-                    // success handled by vm (listener or local update)
-                } else {
-                    print("Erreur incrément points:", err ?? "")
-                    vm.message = "Erreur en sauvegarde des points."
+                if !ok { vm.message = "Erreur en sauvegarde des points." }
+            }
+
+            let revealerId = me.id
+            FirebaseService.shared.markSecretRevealed(playerId: target.id, revealedBy: revealerId, removeSecret: true) { err in
+                DispatchQueue.main.async {
+                    if let err = err {
+                        print("Erreur markSecretRevealed:", err.localizedDescription)
+                    } else {
+                        // mise à jour locale optionnelle (le listener devrait le faire)
+                        if var t = self.vm.players.first(where: { $0.id == target.id }) {
+                            t.secretRevealed = true
+                            t.secret = nil
+                            if let idx = self.vm.players.firstIndex(where: { $0.id == t.id }) {
+                                self.vm.players[idx] = t
+                            }
+                        }
+                    }
                 }
             }
         } else {
-            // échec : -5 points (ne descend pas sous 0 dans VM)
+            // échec : -5 points
             vm.message = "Mauvais secret ! -5 points"
-            withAnimation(.interpolatingSpring(stiffness: 200, damping: 5)
-                          .repeatCount(3, autoreverses: false)) {
+            withAnimation(.interpolatingSpring(stiffness: 200, damping: 5).repeatCount(3, autoreverses: false)) {
                 shakeButton += 1
             }
-
             vm.changePointsForCurrentPlayer(by: -5) { ok, err in
-                if !ok {
-                    print("Erreur décrément:", err ?? "")
-                    vm.message = "Erreur en sauvegarde des points."
-                }
+                if !ok { print("Erreur décrément:", err ?? "") }
             }
-
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
 
-        // optionnel : reset selection sur premier secret
+        // reset choix si besoin
         selectedSecret = vm.availableSecrets.first ?? ""
     }
 
