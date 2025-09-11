@@ -48,88 +48,18 @@ Que la chasse aux secrets commencent c'est tout pour le moment
                     }
                     .foregroundColor(.white)
 
-                    // Spacer then button to show leaderboard
-                    Spacer().frame(height: 18)
-                    Button(action: {
-                        withAnimation(.spring()) { showLeaderboard = true }
-                    }) {
-                        HStack(alignment: .center, spacing: 16) {
-                            // icône ronde dégradée
-                            ZStack {
-                                Circle()
-                                    .fill(LinearGradient(
-                                        gradient: Gradient(colors: [Color(hex: "#E286CA"), Color(hex: "#BD3993")]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                    .frame(width: 48, height: 48)
-                                    .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
-
-                                Image(systemName: "list.number")
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
-                            }
-
-                            // texte principal + sous-texte
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Voir le classement")
-                                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .kerning(0.2)
-
-                                Text("Tous les joueurs et leurs points — mis à jour en temps réel")
-                                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                                    .foregroundColor(Color.white.opacity(0.88))
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.9))
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.white.opacity(0.025))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 3)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .padding(.top, 6)
-                    Spacer(minLength: 200)
 
                 }
                 .padding()
             }
         }
-        // Leaderboard sheet
-        .sheet(isPresented: $showLeaderboard) {
-            NavigationView {
-                LeaderboardView(vm: vm, selectedPlayer: $selectedPlayer)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Fermer") { showLeaderboard = false }
-                        }
-                    }
-            }
-        }
-        // Detail sheet when tapping a player row (optional)
-        .sheet(item: $selectedPlayer) { player in
-            PlayerDetailView(player: player, vm: vm)
-        }
+
     }
 }
 
 
 // MARK: - LeaderboardView (sheet content)
-private struct LeaderboardView: View {
+ struct LeaderboardView: View {
     @ObservedObject var vm: GameViewModel
     @Binding var selectedPlayer: Player?
 

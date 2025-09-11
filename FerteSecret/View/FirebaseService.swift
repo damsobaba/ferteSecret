@@ -163,9 +163,16 @@ final class FirebaseService {
         }
     }
 
-    /// marque le secret comme trouvé ; optionnellement supprime le champ "secret"
-    func markSecretRevealed(playerId: String, revealedBy: String?, removeSecret: Bool = true, completion: ((Error?) -> Void)? = nil) {
+    // FirebaseService.swift
+
+    /// marque le secret comme trouvé ; optionnellement décrémente les points (atomique)
+    func markSecretRevealed(playerId: String,
+                            revealedBy: String?,
+                            removeSecret: Bool = false,
+                            deductPoints: Int? = nil,
+                            completion: ((Error?) -> Void)? = nil) {
         let ref = db.collection("players").document(playerId)
+
         var data: [String: Any] = [
             "secretRevealed": true,
             "revealedAt": FieldValue.serverTimestamp()
@@ -173,15 +180,19 @@ final class FirebaseService {
         if let by = revealedBy {
             data["revealedBy"] = by
         }
+
+        // Si l'appel demande explicitement de supprimer le secret, on peut le faire,
+        // mais par défaut on ne supprime pas (pour conserver le secret en base).
         if removeSecret {
             data["secret"] = FieldValue.delete()
         }
+
+        // Si on doit déduire des points, utilise FieldValue.increment(-deduct)
+        if let toDeduct = deductPoints, toDeduct != 0 {
+            data["points"] = FieldValue.increment(Int64(-toDeduct))
+        }
+
         ref.setData(data, merge: true) { err in
-            if let err = err {
-                print("markSecretRevealed error:", err.localizedDescription)
-            } else {
-                print("markSecretRevealed success for", playerId)
-            }
             completion?(err)
         }
     }

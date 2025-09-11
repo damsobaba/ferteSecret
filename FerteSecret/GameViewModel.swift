@@ -185,6 +185,19 @@ final class GameViewModel: ObservableObject {
 
         // start players listener
         startPlayersListener()
+        // robust sync: ensure currentPlayer mirrors any changes coming to players
+        $players
+          .receive(on: DispatchQueue.main)
+          .sink { [weak self] newPlayers in
+              guard let self = self else { return }
+              if let curId = self.currentPlayer?.id,
+                 let latest = newPlayers.first(where: { $0.id == curId }) {
+                  if latest != self.currentPlayer {
+                      self.currentPlayer = latest
+                  }
+              }
+          }
+          .store(in: &cancellables)
 
         // ensure anonymous auth for read/write if rules need it
         if Auth.auth().currentUser == nil {
@@ -212,18 +225,36 @@ final class GameViewModel: ObservableObject {
     }
 
     // MARK: - Players listener mapping
+    // MARK: - Players listener mapping (correctif rapide)
     private func startPlayersListener() {
         FirebaseService.shared.listenPlayers { [weak self] res in
             DispatchQueue.main.async {
                 switch res {
                 case .success(let arr):
-                    self?.players = arr.map { (id, data) in
+                    // map server -> players
+                    let mapped = arr.map { (id, data) in
                         let username = data["username"] as? String ?? "—"
                         let secret = data["secret"] as? String
                         let points = data["points"] as? Int ?? 5
                         let revealed = data["secretRevealed"] as? Bool ?? false
                         return Player(id: id, username: username, secret: secret, points: points, secretRevealed: revealed)
                     }
+
+                    // debug log
+                    print("listener -> received \(mapped.count) players")
+
+                    // assign players
+                    self?.players = mapped
+
+                    // ensure currentPlayer reflects latest server state immediately
+                    if let currentId = self?.currentPlayer?.id,
+                       let latest = mapped.first(where: { $0.id == currentId }) {
+                        if latest != self?.currentPlayer {
+                            print("listener -> syncing currentPlayer (\(currentId)) points: \(self?.currentPlayer?.points ?? -1) -> \(latest.points)")
+                            self?.currentPlayer = latest
+                        }
+                    }
+
                 case .failure(let err):
                     print("players listener error:", err.localizedDescription)
                 }
@@ -334,18 +365,19 @@ final class GameViewModel: ObservableObject {
     func chooseSecret(_ secret: String) {
         DispatchQueue.main.async {
             guard var p = self.currentPlayer else { return }
+            if p.secretRevealed {
+                self.message = "Ton secret a déjà été révélé — tu ne peux pas en choisir un autre."
+                return
+            }
+            // Sinon comportement normal (écrire secret et secretRevealed = false)
             p.secret = secret
             p.secretRevealed = false
             self.currentPlayer = p
             if let idx = self.players.firstIndex(where: { $0.id == p.id }) { self.players[idx] = p }
-
             FirebaseService.shared.upsertPlayer(uid: p.id, username: p.username, secret: secret, points: p.points, secretRevealed: false) { err in
                 DispatchQueue.main.async {
-                    if let err = err {
-                        self.message = "Erreur sauvegarde : \(err.localizedDescription)"
-                    } else {
-                        self.message = "Secret sauvegardé !"
-                    }
+                    if let err = err { self.message = "Erreur sauvegarde : \(err.localizedDescription)" }
+                    else { self.message = "Secret sauvegardé !" }
                 }
             }
         }

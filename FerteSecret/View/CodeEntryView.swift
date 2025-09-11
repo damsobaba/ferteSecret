@@ -5,8 +5,9 @@ import AVFoundation
 // NOTE: ce fichier suppose que tu as déjà défini ailleurs:
 // - GradientBackground
 // - ShakeEffect
-// - PrimaryButtonStyle & GhostButtonStyle (ou tu peux garder ceux que tu as)
+// - PrimaryButtonStyle & GhostButtonStyle (optionnel)
 // - GameViewModel (avec Player.id : String)
+// - FirebaseService (avec markSecretRevealed, changePlayerPoints, fetchSecrets etc.)
 
 struct CodeEntryView: View {
     @ObservedObject var vm: GameViewModel
@@ -15,6 +16,7 @@ struct CodeEntryView: View {
     @State private var shakeButton = 0
     @State private var showSuccess = false
     @State private var confettiTrigger = false
+    @State private var animateSuccess = false
 
     // pickers : Player.id est de type String (docId)
     @State private var selectedPlayerID: String?
@@ -127,7 +129,7 @@ struct CodeEntryView: View {
     }
 
     private var secretSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .center, spacing: 8) {
             Text("Choisir un secret")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.9))
@@ -179,6 +181,8 @@ struct CodeEntryView: View {
             // disabled also when the current player has 0 points
             .disabled(selectedPlayerID == nil || selectedSecret.isEmpty || (vm.currentPlayer?.points ?? 0) <= 0)
             .opacity((selectedPlayerID == nil || selectedSecret.isEmpty || (vm.currentPlayer?.points ?? 0) <= 0) ? 0.55 : 1.0)
+            .scaleEffect(animateSuccess ? 1.04 : 1.0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: animateSuccess)
             .modifier(ShakeEffect(shakes: CGFloat(shakeButton)))
             .padding(.horizontal)
 
@@ -257,35 +261,63 @@ struct CodeEntryView: View {
 
         // 3) Comparaison
         if selectedSecret == targetSecret {
-            // victoire : +5 points (ou ton montant choisi)
+            // ======= SUCCÈS =======
             vm.message = ""
+            // son + haptics + confetti + animation du bouton
             AudioServicesPlaySystemSound(1025)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                animateSuccess = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                withAnimation { animateSuccess = false }
+            }
+
             confettiTrigger.toggle()
             showSuccess = true
 
+            // 1) ajouter les points à celui qui trouve (+5)
             vm.changePointsForCurrentPlayer(by: 5) { ok, err in
                 if !ok { vm.message = "Erreur en sauvegarde des points." }
             }
 
+            // 2) marquer le secret du target comme trouvé côté serveur et décrémenter ses points
             let revealerId = me.id
-            FirebaseService.shared.markSecretRevealed(playerId: target.id, revealedBy: revealerId, removeSecret: true) { err in
+            let pointsToRemove = target.points
+
+            // on marque revealed (sans supprimer le secret) puis on remet les points du target à 0 (atomiquement)
+            FirebaseService.shared.markSecretRevealed(playerId: target.id,
+                                                      revealedBy: revealerId,
+                                                      removeSecret: false) { err in
                 DispatchQueue.main.async {
                     if let err = err {
                         print("Erreur markSecretRevealed:", err.localizedDescription)
                     } else {
-                        // mise à jour locale optionnelle (le listener devrait le faire)
-                        if var t = self.vm.players.first(where: { $0.id == target.id }) {
-                            t.secretRevealed = true
-                            t.secret = nil
-                            if let idx = self.vm.players.firstIndex(where: { $0.id == t.id }) {
-                                self.vm.players[idx] = t
+                        // décrémente les points du target (atomique)
+                        let delta = -Int64(pointsToRemove)
+                        FirebaseService.shared.changePlayerPoints(uid: target.id, delta: delta) { err2 in
+                            DispatchQueue.main.async {
+                                if let err2 = err2 {
+                                    print("Erreur changePlayerPoints pour target:", err2.localizedDescription)
+                                } else {
+                                    // update local model pour UX immédiate (listener fera la sync correcte)
+                                    if var t = self.vm.players.first(where: { $0.id == target.id }) {
+                                        t.secretRevealed = true
+                                        t.points = max(0, t.points - pointsToRemove) // deviens 0
+                                        if let idx = self.vm.players.firstIndex(where: { $0.id == t.id }) {
+                                            self.vm.players[idx] = t
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+
         } else {
-            // échec : -5 points
+            // ======= ÉCHEC =======
             vm.message = "Mauvais secret ! -5 points"
             withAnimation(.interpolatingSpring(stiffness: 200, damping: 5).repeatCount(3, autoreverses: false)) {
                 shakeButton += 1
@@ -296,7 +328,7 @@ struct CodeEntryView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
 
-        // reset choix si besoin
+        // reset choix si tu veux
         selectedSecret = vm.availableSecrets.first ?? ""
     }
 
@@ -328,6 +360,7 @@ private struct HeaderView: View {
         .padding(.horizontal)
     }
 }
+import SwiftUI
 
 import SwiftUI
 
@@ -344,32 +377,54 @@ struct NamePickerView: View {
     }
 
     var body: some View {
-        Menu {
+        Picker(selection: Binding(
+            get: { selectedId ?? "" },
+            set: { new in selectedId = new.isEmpty ? nil : new }
+        ), label: label) {
             if list.isEmpty {
-                Button("Aucun joueur") { }
+                Text("Aucun joueur").tag("")
             } else {
                 ForEach(list, id: \.id) { p in
-                    Button {
-                        selectedId = p.id
-                    } label: {
-                        HStack {
-                            Text(p.username)
-                            Spacer()
-                            if p.secret != nil { Text("🔐") }
-                        }
-                    }
+                    Text(p.username).tag(p.id)
                 }
             }
-        } label: {
-            HStack {
-                Text(players.first(where: { $0.id == selectedId })?.username ?? "Choisir un joueur")
-                    .foregroundColor(selectedId == nil ? Color.white.opacity(0.7) : .white)
-                Spacer()
-                Image(systemName: "person.fill").foregroundColor(.white.opacity(0.9))
-            }
-            .padding()
-            .background(Color.white.opacity(0.06))
-            .cornerRadius(10)
         }
+        .pickerStyle(MenuPickerStyle())
+        // style du conteneur blanc
+        .padding(.horizontal)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+        )
+        .padding(.horizontal)
+    }
+
+    private var label: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(players.first(where: { $0.id == selectedId })?.username ?? "Choisir un joueur")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(selectedId == nil ? Color.gray : Color.primary)
+                Text(list.isEmpty ? "Aucun joueur disponible" : (selectedId == nil ? "Sélectionnez une cible" : ""))
+                    .font(.caption2)
+                    .foregroundColor(Color.gray.opacity(0.8))
+            }
+            Spacer()
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.06))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "person.fill")
+                    .foregroundColor(Color.primary)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
     }
 }

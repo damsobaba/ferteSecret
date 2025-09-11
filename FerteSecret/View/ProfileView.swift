@@ -1,4 +1,6 @@
+// ProfileView.swift
 import SwiftUI
+import AVFoundation
 
 struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,21 +16,35 @@ struct ProfileView: View {
     @State private var adminSelectedPlayerId: String?
     @State private var adminPointsToAdd: Int = 3
 
-    // CHANGE THIS to whatever short password you want (insecure for production)
-    private let MASTER_PASSWORD = "bitch"
+    // master password (insecure - ok for dev)
+    private let MASTER_PASSWORD = "ava"
+
+    // leaderboard sheet
+    @State private var showLeaderboard = false
+    @State private var selectedPlayer: Player? = nil
+
+    // visibility scheduling (hide button at specific date/time)
+    @State private var isLeaderboardVisible: Bool = true
+    private let visibilityTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
+    // DateComponents for Saturday 13 Sep 2025, 21:00 local time
+    private let hideDateComponents = DateComponents(
+        calendar: Calendar.current,
+        timeZone: TimeZone.current,
+        year: 2025, month: 9, day: 11, hour: 18, minute: 0
+    )
+    private var hideDate: Date? { Calendar.current.date(from: hideDateComponents) }
 
     var body: some View {
         ZStack {
-            // full-screen gradient
             GradientBackground()
                 .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 30) {
 
-                    // Profile header with long-press on avatar
+                    // Profile header (avatar) - long press opens password modal
                     VStack(spacing: 12) {
-                        // avatar tappable / long press to open admin password sheet
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -38,7 +54,6 @@ struct ProfileView: View {
                             .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 2))
                             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
                             .onLongPressGesture(minimumDuration: 1.4) {
-                                // reveal password modal
                                 showPasswordSheet = true
                             }
 
@@ -71,13 +86,17 @@ struct ProfileView: View {
                     // actions
                     VStack(spacing: 12) {
                         Button(action: { withAnimation { showSecret.toggle() } }) {
-                            HStack { Spacer()
+                            HStack {
+                                Spacer()
                                 Text(showSecret ? "Masquer mon secret" : "Voir mon secret")
                                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                                 Spacer()
                             }
                             .padding()
-                            .background(LinearGradient(gradient: Gradient(colors: [Color(hex: "#E286CA"), Color(hex: "#BD3993")]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .background(LinearGradient(
+                                gradient: Gradient(colors: [Color(hex: "#E286CA"), Color(hex: "#BD3993")]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing))
                             .foregroundColor(.white)
                             .cornerRadius(12)
                             .padding(.horizontal)
@@ -90,7 +109,8 @@ struct ProfileView: View {
                             vm.codeInput = ""
                             vm.message = ""
                         }) {
-                            HStack { Spacer()
+                            HStack {
+                                Spacer()
                                 Text("Déconnexion")
                                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                                 Spacer()
@@ -101,6 +121,53 @@ struct ProfileView: View {
                             .cornerRadius(12)
                             .padding(.horizontal)
                         }
+
+                        // Leaderboard button (conditionally visible)
+                        if isLeaderboardVisible {
+                            Button(action: {
+                                withAnimation(.spring()) { showLeaderboard = true }
+                            }) {
+                                HStack(alignment: .center, spacing: 12) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(LinearGradient(
+                                                gradient: Gradient(colors: [Color(hex: "#E286CA"), Color(hex: "#BD3993")]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing))
+                                            .frame(width: 48, height: 48)
+                                            .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
+
+                                        Image(systemName: "list.number")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundColor(.white)
+                                    }
+
+                                    VStack(alignment: .leading) {
+                                        Text("Voir le classement")
+                                            .foregroundColor(.white)
+                                            .font(.system(size: 16, weight: .semibold))
+                                        Text("Tous les joueurs et leurs points")
+                                            .foregroundColor(Color.white.opacity(0.8))
+                                            .font(.caption2)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .padding()
+                                .background(Color.white.opacity(0.04))
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                            }
+                        } else {
+                            // Optionnel : message indiquant l'indisponibilité
+                            Text("Classement indisponible")
+                                .foregroundColor(Color.white.opacity(0.6))
+                                .font(.caption)
+                                .padding(.top, 4)
+                        }
                     }
 
                     Spacer(minLength: 60)
@@ -108,7 +175,7 @@ struct ProfileView: View {
                 .padding(.bottom, 32)
             }
         }
-        // Password sheet (small modal)
+        // password sheet
         .sheet(isPresented: $showPasswordSheet) {
             VStack(spacing: 16) {
                 Text("Mode administrateur")
@@ -130,10 +197,8 @@ struct ProfileView: View {
                             adminPasswordInput = ""
                             showPasswordSheet = false
                             showAdminPanel = true
-                            // preselect a player if available
                             adminSelectedPlayerId = vm.players.first?.id
                         } else {
-                            // feedback for wrong password
                             UINotificationFeedbackGenerator().notificationOccurred(.error)
                             adminPasswordInput = ""
                         }
@@ -144,7 +209,7 @@ struct ProfileView: View {
             }
             .presentationDetents([.fraction(0.28)])
         }
-        // Admin panel: choose player + give points
+        // admin panel sheet
         .sheet(isPresented: $showAdminPanel) {
             NavigationView {
                 VStack(spacing: 16) {
@@ -152,7 +217,6 @@ struct ProfileView: View {
                         .font(.title2)
                         .padding(.top)
 
-                    // Player picker
                     Picker("Choisir un joueur", selection: Binding(
                         get: { adminSelectedPlayerId ?? vm.players.first?.id ?? "" },
                         set: { adminSelectedPlayerId = $0 }
@@ -164,14 +228,12 @@ struct ProfileView: View {
                     .pickerStyle(.menu)
                     .padding(.horizontal)
 
-                    // Points stepper
                     Stepper("Points à ajouter : \(adminPointsToAdd)", value: $adminPointsToAdd, in: -50...100)
                         .padding(.horizontal)
 
                     Button(action: {
                         guard let pid = adminSelectedPlayerId else { return }
                         vm.addPoints(to: pid, amount: adminPointsToAdd)
-
                         showAdminPanel = false
                     }) {
                         Text("Appliquer")
@@ -192,5 +254,40 @@ struct ProfileView: View {
                 }
             }
         }
+        // leaderboard sheet
+        .sheet(isPresented: $showLeaderboard) {
+            NavigationView {
+                LeaderboardView(vm: vm, selectedPlayer: $selectedPlayer)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") { showLeaderboard = false }
+                        }
+                    }
+            }
+        }
+        // visibility timer + initial update
+        .onAppear {
+            updateLeaderboardVisibility()
+        }
+        .onReceive(visibilityTimer) { now in
+            updateLeaderboardVisibility(now: now)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func updateLeaderboardVisibility(now: Date = Date()) {
+        if let hide = hideDate {
+            isLeaderboardVisible = (now < hide)
+        } else {
+            isLeaderboardVisible = true
+        }
+    }
+}
+
+// preview (optional)
+struct ProfileView_Previews: PreviewProvider {
+    static var previews: some View {
+        ProfileView(vm: GameViewModel())
     }
 }
