@@ -24,6 +24,10 @@ final class GameViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    // flags / handles
+    private var playersListenerStarted = false
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+
     // default list (kept local)
     static let defaultSecrets: [String] = [
         "Déchiré mon pantalon en public.",
@@ -183,35 +187,50 @@ final class GameViewModel: ObservableObject {
             }
         }
 
-        // start players listener
-        startPlayersListener()
-        // robust sync: ensure currentPlayer mirrors any changes coming to players
-        $players
-          .receive(on: DispatchQueue.main)
-          .sink { [weak self] newPlayers in
-              guard let self = self else { return }
-              if let curId = self.currentPlayer?.id,
-                 let latest = newPlayers.first(where: { $0.id == curId }) {
-                  if latest != self.currentPlayer {
-                      self.currentPlayer = latest
-                  }
-              }
-          }
-          .store(in: &cancellables)
-
-        // ensure anonymous auth for read/write if rules need it
-        if Auth.auth().currentUser == nil {
-            FirebaseService.shared.signInAnonymously { result in
-                switch result {
-                case .success(let u):
-                    print("anon signed in: \(u.uid)")
-                case .failure(let err):
-                    print("anon sign-in failed:", err.localizedDescription)
+        // observe auth state and start listener after auth
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            guard let self = self else { return }
+            if user != nil {
+                if !self.playersListenerStarted {
+                    print("Auth state -> user present, starting players listener")
+                    self.startPlayersListener()
+                    self.playersListenerStarted = true
+                } else {
+                    // already started
+                }
+            } else {
+                // user signed out - stop listener and clear local state
+                print("Auth state -> user nil, stopping players listener and clearing local players")
+                FirebaseService.shared.stopListeningPlayers()
+                self.playersListenerStarted = false
+                DispatchQueue.main.async {
+                    self.players = []
+                    self.currentPlayer = nil
+                    self.isLoggedIn = false
                 }
             }
         }
 
-        // helpful debug fetch
+        // ensure anonymous auth for read/write if rules need it
+        if Auth.auth().currentUser == nil {
+            FirebaseService.shared.signInAnonymously { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let u):
+                        print("anon signed in: \(u.uid)")
+                        // do not call startPlayersListener() here — authState listener will start it
+                    case .failure(let err):
+                        print("anon sign-in failed:", err.localizedDescription)
+                        // fallback: attempt to start listener anyway (if rules allow)
+                        if !(self?.playersListenerStarted ?? false) {
+                            self?.startPlayersListener()
+                        }
+                    }
+                }
+            }
+        }
+
+        // helpful debug fetch (keeps existing behaviour)
         FirebaseService.shared.fetchPlayersOnce { result in
             DispatchQueue.main.async {
                 switch result {
@@ -222,11 +241,34 @@ final class GameViewModel: ObservableObject {
                 }
             }
         }
+
+        // robust sync: ensure currentPlayer mirrors any changes coming to players
+        $players
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newPlayers in
+                guard let self = self else { return }
+                if let curId = self.currentPlayer?.id,
+                   let updated = newPlayers.first(where: { $0.id == curId }) {
+                    if updated != self.currentPlayer {
+                        print("players subscriber -> updating currentPlayer points to \(updated.points)")
+                        self.currentPlayer = updated
+                    }
+                }
+            }
+            .store(in: &cancellables)
     }
 
-    // MARK: - Players listener mapping
-    // MARK: - Players listener mapping (correctif rapide)
+    // MARK: - Players listener mapping (idempotent)
     private func startPlayersListener() {
+        // avoid starting multiple listeners
+        guard !playersListenerStarted else {
+            print("startPlayersListener: already started, skipping")
+            return
+        }
+
+        playersListenerStarted = true
+        print("startPlayersListener: attaching firebase listener")
+
         FirebaseService.shared.listenPlayers { [weak self] res in
             DispatchQueue.main.async {
                 switch res {
@@ -263,7 +305,11 @@ final class GameViewModel: ObservableObject {
     }
 
     deinit {
+        // stop firebase listeners and auth listener
         FirebaseService.shared.stopListeningPlayers()
+        if let handle = authStateHandle {
+            Auth.auth().removeStateDidChangeListener(handle)
+        }
     }
 
     // MARK: - Auth / register / login
@@ -282,7 +328,29 @@ final class GameViewModel: ObservableObject {
                     if !(self?.players.contains(where: { $0.id == uid }) ?? false) {
                         self?.players.append(newP)
                     }
+
+                    // --- fallback : fetch players once to populate the picker quickly on new devices ---
+                    FirebaseService.shared.fetchPlayersOnce { [weak self] res in
+                        DispatchQueue.main.async {
+                            switch res {
+                            case .success(let arr):
+                                let mapped = arr.map { (id, data) in
+                                    let username = data["username"] as? String ?? "—"
+                                    let secret = data["secret"] as? String
+                                    let points = data["points"] as? Int ?? 5
+                                    let revealed = data["secretRevealed"] as? Bool ?? false
+                                    return Player(id: id, username: username, secret: secret, points: points, secretRevealed: revealed)
+                                }
+                                // overwrite/merge quickly so picker shows everyone ASAP
+                                self?.players = mapped
+                            case .failure(let err):
+                                print("fetchPlayersOnce after register error:", err.localizedDescription)
+                            }
+                        }
+                    }
+
                     completion(.success(()))
+
                 case .failure(let err):
                     completion(.failure(err))
                 }

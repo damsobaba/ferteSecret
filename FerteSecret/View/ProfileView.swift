@@ -31,7 +31,7 @@ struct ProfileView: View {
     private let hideDateComponents = DateComponents(
         calendar: Calendar.current,
         timeZone: TimeZone.current,
-        year: 2025, month: 9, day: 11, hour: 18, minute: 0
+        year: 2025, month: 9, day: 13, hour: 18, minute: 0
     )
     private var hideDate: Date? { Calendar.current.date(from: hideDateComponents) }
 
